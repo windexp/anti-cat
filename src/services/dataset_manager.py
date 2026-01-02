@@ -420,13 +420,16 @@ class DatasetManager:
         
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # train/val 디렉토리 구조 생성
+        # train/val 디렉토리 구조 생성 (기존 내용 삭제)
         train_images = output_dir / "train" / "images"
         train_labels = output_dir / "train" / "labels"
         val_images = output_dir / "val" / "images"
         val_labels = output_dir / "val" / "labels"
         
+        # 기존 디렉토리 삭제 (중복 방지)
         for d in [train_images, train_labels, val_images, val_labels]:
+            if d.exists():
+                shutil.rmtree(d)
             d.mkdir(parents=True, exist_ok=True)
         
         # Export 대상: 분류 완료된 이벤트만 (classified + manual_labeled)
