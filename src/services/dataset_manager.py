@@ -3,6 +3,8 @@ import json
 import logging
 import shutil
 import random
+from collections import defaultdict
+import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
@@ -612,6 +614,65 @@ class DatasetManager:
         
         # Summary 파일 생성
         summary_path = output_dir / "summary.md"
+
+        def _parse_camera(event: Dict[str, Any]) -> str:
+            camera = ''
+            try:
+                fd = event.get('frigate_data')
+                if isinstance(fd, str):
+                    fd = json.loads(fd)
+                if isinstance(fd, dict):
+                    camera = fd.get('camera', '') or ''
+            except Exception:
+                camera = ''
+            return camera
+
+        def _parse_event_dt(event: Dict[str, Any]) -> Optional[datetime]:
+            # Many event_id values look like: "1767101046.219933-5isoy0" (timestamp + suffix)
+            # Synthetic IDs can look like: "synthetic_1767250984.864521-xabk31_1767195076"
+            # We extract the first numeric timestamp-like token we can find.
+            for key in ('source_event_id', 'event_id'):
+                raw = event.get(key)
+                if raw is None:
+                    continue
+
+                # Fast path: already numeric
+                if isinstance(raw, (int, float)):
+                    try:
+                        return datetime.fromtimestamp(float(raw))
+                    except Exception:
+                        pass
+
+                s = str(raw)
+                m = re.search(r'(\d+(?:\.\d+)?)', s)
+                if not m:
+                    continue
+                try:
+                    ts = float(m.group(1))
+                    return datetime.fromtimestamp(ts)
+                except Exception:
+                    continue
+
+            return None
+
+        def _time_bucket_kor(dt: Optional[datetime]) -> str:
+            if dt is None:
+                return 'Unknown'
+            hour = dt.hour
+            if 0 <= hour < 6:
+                return '새벽(00-06)'
+            if 6 <= hour < 12:
+                return '오전(06-12)'
+            if 12 <= hour < 18:
+                return '오후(12-18)'
+            return '저녁(18-24)'
+
+        def _norm_label(event: Dict[str, Any]) -> str:
+            label = event.get('final_label', 'background') or 'background'
+            if label not in ('person', 'cat', 'background'):
+                return 'background'
+            return label
+
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write("# YOLO Dataset Export Summary\n\n")
             f.write(f"- **Date**: {datetime.now().isoformat()}\n")
@@ -623,6 +684,48 @@ class DatasetManager:
             f.write(f"- **Person**: {len(sampled_person_info)}\n")
             f.write(f"- **Cat**: {len(sampled_cat_info)}\n")
             f.write(f"- **Background**: {len(sampled_background_info)}\n\n")
+
+            # Camera / Time-of-day breakdowns
+            camera_totals: Dict[str, int] = defaultdict(int)
+            camera_by_label: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            bucket_totals: Dict[str, int] = defaultdict(int)
+            bucket_by_label: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+            for item in all_selected_info:
+                event = item['event']
+                label = _norm_label(event)
+                camera = _parse_camera(event) or 'Unknown'
+                dt = _parse_event_dt(event)
+                bucket = _time_bucket_kor(dt)
+
+                camera_totals[camera] += 1
+                camera_by_label[camera][label] += 1
+                bucket_totals[bucket] += 1
+                bucket_by_label[bucket][label] += 1
+
+            f.write("## Camera Breakdown\n")
+            f.write("| Camera | Total | Person | Cat | Background |\n")
+            f.write("|---|---:|---:|---:|---:|\n")
+            for camera, total in sorted(camera_totals.items(), key=lambda x: (-x[1], x[0])):
+                p = camera_by_label[camera].get('person', 0)
+                c = camera_by_label[camera].get('cat', 0)
+                b = camera_by_label[camera].get('background', 0)
+                f.write(f"| {camera} | {total} | {p} | {c} | {b} |\n")
+            f.write("\n")
+
+            f.write("## Time-of-Day Breakdown\n")
+            f.write("| Time Bucket | Total | Person | Cat | Background |\n")
+            f.write("|---|---:|---:|---:|---:|\n")
+            bucket_order = ['새벽(00-06)', '오전(06-12)', '오후(12-18)', '저녁(18-24)', 'Unknown']
+            for bucket in bucket_order:
+                if bucket not in bucket_totals:
+                    continue
+                total = bucket_totals[bucket]
+                p = bucket_by_label[bucket].get('person', 0)
+                c = bucket_by_label[bucket].get('cat', 0)
+                b = bucket_by_label[bucket].get('background', 0)
+                f.write(f"| {bucket} | {total} | {p} | {c} | {b} |\n")
+            f.write("\n")
             
             f.write("## Selection Details\n")
             f.write("| Class | Event ID | Camera | Reason | Score | Set |\n")
@@ -639,15 +742,7 @@ class DatasetManager:
                 label = event.get('final_label', 'background') or 'background'
                 eid = event['event_id']
 
-                camera = ''
-                try:
-                    fd = event.get('frigate_data')
-                    if isinstance(fd, str):
-                        fd = json.loads(fd)
-                    if isinstance(fd, dict):
-                        camera = fd.get('camera', '') or ''
-                except Exception:
-                    camera = ''
+                camera = _parse_camera(event)
 
                 reason = item['reason']
                 score = f"{item['score']:.4f}"
