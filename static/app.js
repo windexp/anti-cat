@@ -520,6 +520,13 @@ createApp({
 
                 if (res.ok) {
                     logs.value = data.logs;
+                    // 로그 로드 후 스크롤을 맨 아래로
+                    setTimeout(() => {
+                        const logContainer = document.querySelector('.logs-container');
+                        if (logContainer) {
+                            logContainer.scrollTop = logContainer.scrollHeight;
+                        }
+                    }, 100);
                 } else {
                     showToast('로그 조회 실패', 'error');
                 }
