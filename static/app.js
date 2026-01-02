@@ -19,7 +19,6 @@ createApp({
         const logs = ref([]);
         const logsLoading = ref(false);
         const modelRefreshRunning = ref(false);
-        const boundBoxRecalculating = ref(false);
         const labelRegenerating = ref(false);
 
         const showModelSelector = ref(false);
@@ -28,7 +27,7 @@ createApp({
         const selectedFamily = ref('');
         const selectedModel = ref('');
         const isSidebarOpen = ref(true);
-        const selectedLabelFilter = ref('');
+        const selectedLabels = ref([]);
 
         const imageResolution = ref('');
 
@@ -45,6 +44,7 @@ createApp({
         const tabs = computed(() => [
             { id: 'all', label: 'All Events', count: stats.value.total_images || 0, countClass: 'bg-slate-200 text-slate-700' },
             { id: 'classified', label: 'Classified', count: stats.value.by_status?.classified || 0, countClass: 'bg-emerald-100 text-emerald-700' },
+            { id: 'manual_labeled', label: 'Manual labeled', count: stats.value.by_status?.manual_labeled || 0, countClass: 'bg-blue-100 text-blue-700' },
             { id: 'mismatched', label: 'Mismatched', count: stats.value.by_status?.mismatched || 0, countClass: 'bg-amber-100 text-amber-700' },
             { id: 'pending', label: 'Pending', count: (stats.value.by_status?.pending || 0) + (stats.value.by_status?.gemini_error || 0), countClass: 'bg-rose-100 text-rose-700' },
             { id: 'synthetic', label: 'Synthetic', count: stats.value.synthetic_count || 0, countClass: 'bg-purple-100 text-purple-700' },
@@ -73,27 +73,26 @@ createApp({
         const fetchEvents = async () => {
             loading.value = true;
             try {
-                let url = `/api/events?limit=${limit.value}&offset=${offset.value}`;
-                
-                // 라벨 필터 추가
-                if (selectedLabelFilter.value) {
-                    url += `&label=${selectedLabelFilter.value}`;
-                }
+                const buildUrlWithLabels = (baseUrl) => {
+                    const urlObj = new URL(baseUrl, window.location.origin);
+                    if (Array.isArray(selectedLabels.value) && selectedLabels.value.length > 0) {
+                        selectedLabels.value.forEach((l) => urlObj.searchParams.append('label', l));
+                    }
+                    return urlObj.pathname + urlObj.search;
+                };
+
+                let url = buildUrlWithLabels(`/api/events?limit=${limit.value}&offset=${offset.value}`);
 
                 if (currentTab.value === 'classified') {
-                    url = `/api/events/classified?limit=${limit.value}&offset=${offset.value}`;
-                    if (selectedLabelFilter.value) {
-                        url += `&label=${selectedLabelFilter.value}`;
-                    }
+                    url = buildUrlWithLabels(`/api/events/classified?limit=${limit.value}&offset=${offset.value}`);
+                } else if (currentTab.value === 'manual_labeled') {
+                    url = buildUrlWithLabels(`/api/events?status=manual_labeled&limit=${limit.value}&offset=${offset.value}`);
                 } else if (currentTab.value === 'mismatched') {
                     url = `/api/events/mismatched?limit=${limit.value}&offset=${offset.value}`;
                 } else if (currentTab.value === 'pending') {
                     url = `/api/events/pending`;
                 } else if (currentTab.value === 'synthetic') {
-                    url = `/api/events/synthetic?limit=${limit.value}&offset=${offset.value}`;
-                    if (selectedLabelFilter.value) {
-                        url += `&label=${selectedLabelFilter.value}`;
-                    }
+                    url = buildUrlWithLabels(`/api/events/synthetic?limit=${limit.value}&offset=${offset.value}`);
                 }
 
                 const res = await fetch(url);
@@ -110,6 +109,25 @@ createApp({
         const onFilterChange = () => {
             offset.value = 0;
             fetchEvents();
+        };
+
+        const clearLabelFilters = () => {
+            selectedLabels.value = [];
+            onFilterChange();
+        };
+
+        const toggleLabelFilter = (label) => {
+            if (!label) return;
+            const current = Array.isArray(selectedLabels.value) ? selectedLabels.value : [];
+            const idx = current.indexOf(label);
+            if (idx >= 0) {
+                current.splice(idx, 1);
+            } else {
+                current.push(label);
+            }
+            // Ensure reactivity if array reference wasn't replaced
+            selectedLabels.value = [...current];
+            onFilterChange();
         };
 
         // 액션
@@ -492,30 +510,6 @@ createApp({
             }
         };
 
-        const recalculateBoundBoxes = async () => {
-            if (boundBoxRecalculating.value) return;
-            
-            if (!confirm('기존 이벤트들의 bound_box를 재계산하시겠습니까? (최대 100개)')) return;
-            
-            boundBoxRecalculating.value = true;
-            try {
-                showToast('bound_box 재계산 중...', 'success');
-                const res = await fetch('/api/migrate/bound-boxes?limit=100', { method: 'POST' });
-                const data = await res.json();
-
-                if (res.ok) {
-                    showToast(`재계산 완료: 성공 ${data.success_count}개, 실패 ${data.failed_count}개`, 'success');
-                    await fetchStats();
-                } else {
-                    showToast(data?.detail || 'bound_box 재계산 실패', 'error');
-                }
-            } catch (e) {
-                showToast('오류가 발생했습니다', 'error');
-            } finally {
-                boundBoxRecalculating.value = false;
-            }
-        };
-
         // 유틸리티
         let toastTimer = null;
         const showToast = (message, type = 'success') => {
@@ -668,7 +662,7 @@ createApp({
         // 탭 변경 시 데이터 새로고침
         watch(currentTab, () => {
             offset.value = 0;
-            selectedLabelFilter.value = '';
+            selectedLabels.value = [];
             fetchEvents();
         });
 
@@ -713,16 +707,16 @@ createApp({
             selectedModel,
             modelOptions,
             isSidebarOpen,
-            selectedLabelFilter,
+            selectedLabels,
             onFilterChange,
-            boundBoxRecalculating,
+            clearLabelFilters,
+            toggleLabelFilter,
             labelRegenerating,
             modalImage, boxCanvas, imageResolution,
             openEventModal, onImageLoad, drawBoxes, labelEvent, deleteEvent, retryGemini,
 
             triggerDailyRoutine, refreshModels, exportDataset, showLogs, fetchLogs,
             regenerateLabels,
-            recalculateBoundBoxes,
             toggleModelSelector,
             closeModelSelector,
             reloadModelSelector,

@@ -135,7 +135,7 @@ async def get_processing_status():
 @router.get("/events")
 async def get_events(
     status: Optional[str] = Query(None, description="상태 필터 (classified, mismatched, pending, gemini_error, manual_labeled)"),
-    label: Optional[str] = Query(None, description="라벨 필터 (person, cat, background 등)"),
+    label: Optional[List[str]] = Query(None, description="라벨 필터 (복수 선택 가능: label=person&label=cat 등)"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
@@ -151,10 +151,12 @@ async def get_events(
         events = await dataset_manager.get_events_by_status(status)
         # status 필터링 후 label 필터링 적용 (메모리 상에서)
         if label:
-            events = [e for e in events if e.get('final_label') == label]
+            events = [e for e in events if e.get('final_label') in label]
     else:
         # All events 탭: Synthetic 포함, Label 필터링 적용
-        events = await dataset_manager.db.get_all_events(limit=1000, include_synthetic=True, label=label)
+        events = await dataset_manager.db.get_all_events(limit=1000, include_synthetic=True)
+        if label:
+            events = [e for e in events if e.get('final_label') in label]
     
     # 최신순 정렬 (원본 시간 기준)
     events.sort(key=_get_event_sort_key, reverse=True)
@@ -177,7 +179,7 @@ async def get_events(
 
 @router.get("/events/classified")
 async def get_classified_events(
-    label: Optional[str] = Query(None, description="라벨 필터"),
+    label: Optional[List[str]] = Query(None, description="라벨 필터 (복수 선택 가능)"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
@@ -186,7 +188,7 @@ async def get_classified_events(
     
     # 라벨 필터링
     if label:
-        events = [e for e in events if e.get('final_label') == label]
+        events = [e for e in events if e.get('final_label') in label]
         
     events.sort(key=_get_event_sort_key, reverse=True)
     
@@ -240,7 +242,7 @@ async def get_pending_events():
 
 @router.get("/events/synthetic")
 async def get_synthetic_events(
-    label: Optional[str] = Query(None, description="라벨 필터"),
+    label: Optional[List[str]] = Query(None, description="라벨 필터 (복수 선택 가능)"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
@@ -252,7 +254,7 @@ async def get_synthetic_events(
     
     # 라벨 필터링
     if label:
-        synthetic_events = [e for e in synthetic_events if e.get('final_label') == label]
+        synthetic_events = [e for e in synthetic_events if e.get('final_label') in label]
         
     synthetic_events.sort(key=_get_event_sort_key, reverse=True)
     
