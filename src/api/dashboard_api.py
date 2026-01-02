@@ -720,3 +720,126 @@ async def get_export_summary():
         content = f.read()
         
     return PlainTextResponse(content)
+
+
+@router.get("/dataset/review")
+async def get_dataset_review(
+    split: Optional[str] = Query(None, description="train or val"),
+    label: Optional[List[str]] = Query(None, description="Filter by class: person, cat, background"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    """Dataset Review: YOLO export 폴더의 train/val 데이터 조회"""
+    yolo_export_dir = settings.data_dir / "yolo_export"
+    
+    if not yolo_export_dir.exists():
+        return {"items": [], "total": 0, "stats": {}}
+    
+    # 데이터 수집
+    all_items = []
+    
+    splits_to_check = [split] if split in ['train', 'val'] else ['train', 'val']
+    
+    for split_name in splits_to_check:
+        split_dir = yolo_export_dir / split_name
+        images_dir = split_dir / "images"
+        labels_dir = split_dir / "labels"
+        
+        if not images_dir.exists():
+            continue
+            
+        for img_file in images_dir.iterdir():
+            if img_file.suffix.lower() not in ['.jpg', '.jpeg', '.png']:
+                continue
+                
+            # 라벨 파일 확인
+            label_file = labels_dir / f"{img_file.stem}.txt"
+            
+            # 라벨 파싱
+            classes_in_image = []
+            bboxes = []
+            
+            if label_file.exists():
+                try:
+                    with open(label_file, 'r') as f:
+                        lines = f.readlines()
+                        for line in lines:
+                            parts = line.strip().split()
+                            if len(parts) >= 5:
+                                class_id = int(parts[0])
+                                x_center, y_center, width, height = map(float, parts[1:5])
+                                
+                                # class_id를 class name으로 변환 (0: person, 1: cat)
+                                class_name = 'person' if class_id == 0 else 'cat'
+                                classes_in_image.append(class_name)
+                                bboxes.append({
+                                    'class': class_name,
+                                    'bbox': [x_center, y_center, width, height]
+                                })
+                except Exception as e:
+                    logger.error(f"Error reading label file {label_file}: {e}")
+            
+            # 클래스가 없으면 background
+            if not classes_in_image:
+                classes_in_image = ['background']
+            
+            # 필터링
+            if label:
+                # 요청된 라벨 중 하나라도 포함하는지 확인
+                if not any(cls in classes_in_image for cls in label):
+                    continue
+            
+            all_items.append({
+                'event_id': img_file.stem,
+                'split': split_name,
+                'classes': list(set(classes_in_image)),  # 중복 제거
+                'bboxes': bboxes,
+                'image_path': str(img_file),
+                'label_path': str(label_file) if label_file.exists() else None
+            })
+    
+    # 통계 계산
+    stats = {
+        'total': len(all_items),
+        'by_split': {},
+        'by_class': {'person': 0, 'cat': 0, 'background': 0}
+    }
+    
+    for item in all_items:
+        # Split 통계
+        split_name = item['split']
+        stats['by_split'][split_name] = stats['by_split'].get(split_name, 0) + 1
+        
+        # Class 통계
+        for cls in item['classes']:
+            if cls in stats['by_class']:
+                stats['by_class'][cls] += 1
+    
+    # 정렬 및 페이징
+    all_items.sort(key=lambda x: x['event_id'], reverse=True)
+    total = len(all_items)
+    paginated_items = all_items[offset:offset + limit]
+    
+    return {
+        "items": paginated_items,
+        "total": total,
+        "stats": stats
+    }
+
+
+@router.get("/dataset/images/{event_id}")
+async def get_dataset_image(event_id: str):
+    """Dataset Review용 이미지 반환"""
+    yolo_export_dir = settings.data_dir / "yolo_export"
+    
+    # train과 val 모두 확인
+    for split in ['train', 'val']:
+        images_dir = yolo_export_dir / split / "images"
+        
+        # 다양한 확장자 시도
+        for ext in ['.jpg', '.jpeg', '.png']:
+            img_path = images_dir / f"{event_id}{ext}"
+            if img_path.exists():
+                return FileResponse(img_path)
+    
+    raise HTTPException(status_code=404, detail="Image not found")

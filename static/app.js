@@ -8,6 +8,7 @@ createApp({
         const totalEvents = ref(0);
         const loading = ref(false);
         const currentTab = ref('all');
+        const currentPage = ref('dashboard');
         const selectedEvent = ref(null);
         const offset = ref(0);
         const limit = ref(20);
@@ -30,9 +31,23 @@ createApp({
 
         const imageResolution = ref('');
 
+        // Dataset Review 상태
+        const datasetItems = ref([]);
+        const datasetTotal = ref(0);
+        const datasetLoading = ref(false);
+        const datasetSplit = ref(null);
+        const datasetLabels = ref([]);
+        const datasetOffset = ref(0);
+        const datasetLimit = ref(20);
+        const datasetStats = ref({ total: 0, by_split: {}, by_class: {} });
+        const selectedDatasetItem = ref(null);
+        const datasetImageResolution = ref('');
+
         // Template refs
         const modalImage = ref(null);
         const boxCanvas = ref(null);
+        const datasetModalImage = ref(null);
+        const datasetBoxCanvas = ref(null);
 
         const modelOptions = computed(() => {
             const fam = modelFamilies.value.find(f => f.family === selectedFamily.value);
@@ -133,6 +148,45 @@ createApp({
             }
             // 이미지 로드 후 박스 그리기
             setTimeout(() => drawBoxes(), 100);
+        };
+
+        const drawDatasetCardBox = (item, loadEvent) => {
+            if (!item || !item.bboxes || item.bboxes.length === 0) return;
+            
+            setTimeout(() => {
+                const img = item._imgEl;
+                const canvas = item._canvasEl;
+                
+                if (!img || !canvas) return;
+                
+                const ctx = canvas.getContext('2d');
+                
+                // 캔버스 크기를 이미지 표시 크기에 맞춤
+                const rect = img.getBoundingClientRect();
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                canvas.style.width = rect.width + 'px';
+                canvas.style.height = rect.height + 'px';
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // YOLO 형식 bbox 그리기 (x_center, y_center, width, height - normalized 0~1)
+                item.bboxes.forEach((bboxInfo, idx) => {
+                    const [xCenter, yCenter, width, height] = bboxInfo.bbox;
+                    
+                    const x = Math.round((xCenter - width / 2) * canvas.width);
+                    const y = Math.round((yCenter - height / 2) * canvas.height);
+                    const w = Math.round(width * canvas.width);
+                    const h = Math.round(height * canvas.height);
+
+                    // 클래스별 색상
+                    const color = bboxInfo.class === 'person' ? 'rgba(59, 130, 246, 0.9)' : 'rgba(251, 146, 60, 0.9)'; // blue or orange
+                    
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, w, h);
+                });
+            }, 50);
         };
 
         const drawBoxes = () => {
@@ -499,6 +553,124 @@ createApp({
             }
         };
 
+        // Dataset Review 함수들
+        const fetchDatasetReview = async () => {
+            datasetLoading.value = true;
+            try {
+                let url = `/api/dataset/review?limit=${datasetLimit.value}&offset=${datasetOffset.value}`;
+                
+                if (datasetSplit.value) {
+                    url += `&split=${datasetSplit.value}`;
+                }
+                
+                if (datasetLabels.value.length > 0) {
+                    datasetLabels.value.forEach(label => {
+                        url += `&label=${label}`;
+                    });
+                }
+                
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                datasetItems.value = data.items || [];
+                datasetTotal.value = data.total || 0;
+                datasetStats.value = data.stats || { total: 0, by_split: {}, by_class: {} };
+            } catch (e) {
+                console.error('Dataset review 조회 실패:', e);
+                showToast('Dataset 조회 실패', 'error');
+            } finally {
+                datasetLoading.value = false;
+            }
+        };
+
+        const toggleDatasetLabel = (label) => {
+            if (!label) return;
+            const idx = datasetLabels.value.indexOf(label);
+            if (idx >= 0) {
+                datasetLabels.value.splice(idx, 1);
+            } else {
+                datasetLabels.value.push(label);
+            }
+            datasetOffset.value = 0;
+            fetchDatasetReview();
+        };
+
+        const openDatasetModal = (item) => {
+            selectedDatasetItem.value = item;
+            datasetImageResolution.value = '';
+        };
+
+        const onDatasetImageLoad = (event) => {
+            const img = event.target;
+            if (img) {
+                datasetImageResolution.value = `${img.naturalWidth} x ${img.naturalHeight}`;
+            }
+            setTimeout(() => drawDatasetBoxes(), 100);
+        };
+
+        const drawDatasetBoxes = () => {
+            if (!selectedDatasetItem.value) return;
+
+            const canvas = datasetBoxCanvas.value;
+            const img = datasetModalImage.value;
+
+            if (!canvas || !img) {
+                return;
+            }
+
+            const ctx = canvas.getContext('2d');
+
+            const rect = img.getBoundingClientRect();
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // YOLO 형식 bbox 그리기 (x_center, y_center, width, height - normalized 0~1)
+            selectedDatasetItem.value.bboxes.forEach((bboxInfo, idx) => {
+                const [xCenter, yCenter, width, height] = bboxInfo.bbox;
+                
+                const x = Math.round((xCenter - width / 2) * canvas.width);
+                const y = Math.round((yCenter - height / 2) * canvas.height);
+                const w = Math.round(width * canvas.width);
+                const h = Math.round(height * canvas.height);
+
+                // 클래스별 색상
+                const color = bboxInfo.class === 'person' ? 'rgba(59, 130, 246, 0.9)' : 'rgba(251, 146, 60, 0.9)'; // blue or orange
+                
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(x, y, w, h);
+
+                // 라벨 배경
+                ctx.fillStyle = color;
+                const label = `${bboxInfo.class} ${idx + 1}`;
+                ctx.font = 'bold 14px sans-serif';
+                const metrics = ctx.measureText(label);
+                ctx.fillRect(x, y - 22, metrics.width + 8, 22);
+
+                // 라벨 텍스트
+                ctx.fillStyle = 'white';
+                ctx.fillText(label, x + 4, y - 6);
+            });
+        };
+
+        const prevDatasetPage = () => {
+            if (datasetOffset.value > 0) {
+                datasetOffset.value = Math.max(0, datasetOffset.value - datasetLimit.value);
+                fetchDatasetReview();
+            }
+        };
+
+        const nextDatasetPage = () => {
+            if (datasetOffset.value + datasetLimit.value < datasetTotal.value) {
+                datasetOffset.value += datasetLimit.value;
+                fetchDatasetReview();
+            }
+        };
+
         // 유틸리티
         let toastTimer = null;
         const showToast = (message, type = 'success') => {
@@ -666,6 +838,24 @@ createApp({
             }
         });
 
+        // selectedDatasetItem 변경 시 박스 다시 그리기
+        watch(selectedDatasetItem, () => {
+            if (selectedDatasetItem.value) {
+                setTimeout(() => drawDatasetBoxes(), 100);
+            }
+        });
+
+        // currentPage 변경 시 데이터 로드
+        watch(currentPage, (newPage) => {
+            if (newPage === 'dataset-review') {
+                datasetOffset.value = 0;
+                fetchDatasetReview();
+            } else if (newPage === 'dashboard') {
+                fetchStats();
+                fetchEvents();
+            }
+        });
+
         // 초기 로드
         onMounted(() => {
             console.log('App mounted');
@@ -683,7 +873,7 @@ createApp({
         });
 
         return {
-            stats, events, totalEvents, loading, currentTab, selectedEvent,
+            stats, events, totalEvents, loading, currentTab, currentPage, selectedEvent,
             offset, limit, toastVisible, toastMessage, toastType, tabs,
             showLogModal, logs, logsLoading,
             modelRefreshRunning,
@@ -700,6 +890,14 @@ createApp({
             toggleLabelFilter,
             labelRegenerating,
             modalImage, boxCanvas, imageResolution,
+            
+            // Dataset Review
+            datasetItems, datasetTotal, datasetLoading, datasetSplit, datasetLabels,
+            datasetOffset, datasetLimit, datasetStats, selectedDatasetItem,
+            datasetImageResolution, datasetModalImage, datasetBoxCanvas,
+            fetchDatasetReview, toggleDatasetLabel, openDatasetModal,
+            onDatasetImageLoad, drawDatasetBoxes, drawDatasetCardBox, prevDatasetPage, nextDatasetPage,
+            
             openEventModal, onImageLoad, drawBoxes, labelEvent, deleteEvent, retryGemini,
 
             triggerDailyRoutine, refreshModels, exportDataset, showLogs, fetchLogs,
