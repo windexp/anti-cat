@@ -225,81 +225,98 @@
 
             <!-- 메인 컨텐츠 -->
             <main class="flex-1 min-w-0">
-            <!-- 탭 네비게이션 -->
-            <div class="flex border-b border-slate-200 mb-8 space-x-8">
-                <button v-for="tab in tabs" :key="tab.id"
-                        @click="currentTab = tab.id"
-                        class="pb-4 text-sm font-medium border-b-2 transition-all relative"
-                        :class="currentTab === tab.id 
-                            ? 'border-blue-600 text-blue-600' 
-                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'">
-                    {{ tab.label }}
-                    <span v-if="tab.count !== undefined" 
-                          class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold align-middle"
-                          :class="tab.countClass">
-                        {{ tab.count }}
-                    </span>
-                </button>
-            </div>
-
-            <!-- 이벤트 그리드 -->
-            <div v-if="loading" class="flex justify-center py-20">
-                <div class="flex flex-col items-center">
-                    <div class="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-                    <span class="text-slate-500 font-medium">Loading events...</span>
-                </div>
-            </div>
-            
-            <div v-else-if="events.length === 0" class="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300">
-                <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-inbox text-3xl text-slate-400"></i>
-                </div>
-                <h3 class="text-lg font-medium text-slate-800 mb-1">No events found</h3>
-                <p class="text-slate-500">There are no events to display in this category.</p>
-            </div>
-
-            <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                <div v-for="event in events" :key="event.event_id"
-                     class="bg-white rounded-xl overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-300 border border-slate-100 group"
-                     @click="openEventModal(event)">
-                    <div class="relative overflow-hidden">
-                        <img :src="event.image_url" 
-                             :alt="event.event_id"
-                             @error="$event.target.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 300%22%3E%3Crect fill=%22%23f1f5f9%22 width=%22400%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2394a3b8%22 font-size=%2220%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'"
-                             class="w-full h-48 object-cover transform group-hover:scale-105 transition-transform duration-500">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                        
-                        <!-- 상태 배지 -->
-                        <span class="absolute top-3 right-3 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide shadow-sm backdrop-blur-sm"
-                              :class="getStatusClass(event.status)">
-                            {{ getStatusLabel(event.status) }}
-                        </span>
-                    </div>
-                    <div class="p-4">
-                        <div class="flex justify-between items-center mb-3">
-                            <span class="text-xs text-slate-400 font-medium flex items-center">
-                                <i class="far fa-clock mr-1"></i>
-                                {{ formatDate(event.created_at) }}
+            <div>
+                <!-- 탭 메뉴 -->
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex space-x-1 bg-slate-100 p-1 rounded-xl">
+                        <button v-for="tab in tabs" :key="tab.id"
+                                @click="currentTab = tab.id"
+                                class="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center"
+                                :class="currentTab === tab.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                            {{ tab.label }}
+                            <span v-if="tab.count !== undefined"
+                                  class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                  :class="tab.countClass">
+                                {{ tab.count }}
                             </span>
-                            <span v-if="event.is_synthetic" 
-                                  class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-bold border border-purple-200">
-                                <i class="fas fa-flask mr-1"></i>SYNTHETIC
+                        </button>
+                    </div>
+
+                    <!-- 라벨 필터 -->
+                    <div class="pb-3" v-if="currentTab === 'all' || currentTab === 'classified' || currentTab === 'synthetic'">
+                        <select v-model="selectedLabelFilter" @change="onFilterChange" 
+                                class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-100 cursor-pointer hover:border-slate-300 transition-colors">
+                            <option value="">All Labels</option>
+                            <option value="person">Person</option>
+                            <option value="cat">Cat</option>
+                            <option value="background">Background</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 이벤트 그리드 -->
+                <div v-if="loading" class="flex justify-center py-20">
+                    <div class="flex flex-col items-center">
+                        <div class="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                        <span class="text-slate-500 font-medium">Loading events...</span>
+                    </div>
+                </div>
+                
+                <div v-else-if="events.length === 0" class="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300">
+                    <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-inbox text-3xl text-slate-400"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-slate-800 mb-1">No events found</h3>
+                    <p class="text-slate-500">There are no events to display in this category.</p>
+                </div>
+
+                <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    <div v-for="event in events" :key="event.event_id"
+                         class="bg-white rounded-xl overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-300 border border-slate-100 group"
+                         @click="openEventModal(event)">
+                        <div class="relative overflow-hidden">
+                            <img :src="event.image_url" 
+                                 :alt="event.event_id"
+                                 @error="$event.target.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 300%22%3E%3Crect fill=%22%23f1f5f9%22 width=%22400%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2394a3b8%22 font-size=%2220%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'"
+                                 class="w-full h-48 object-cover transform group-hover:scale-105 transition-transform duration-500">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                            
+                            <!-- 상태 배지 -->
+                            <span class="absolute top-3 right-3 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide shadow-sm backdrop-blur-sm"
+                                  :class="getStatusClass(event.status)">
+                                {{ getStatusLabel(event.status) }}
                             </span>
                         </div>
+                        <div class="p-4">
+                            <div class="flex justify-between items-center mb-3">
+                            <span class="text-xs text-slate-400 font-medium flex items-center">
+                                <i class="far fa-clock mr-1"></i>
+                                <span v-html="formatEventTime(event.event_id)"></span>
+                            </span>
+                            <!-- <span v-if="event.is_synthetic" 
+                                  class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-bold border border-purple-200">
+                                <i class="fas fa-flask mr-1"></i>SYNTHETIC
+                            </span> -->
+                        </div>
                         <div class="flex items-center space-x-2 mb-3">
-                            <span class="px-2 py-1 rounded-md text-xs font-semibold border"
-                                  :class="getFrigateConfidenceClass(event)">
-                                F: {{ event.frigate_label }}
+                            <span class="px-2 py-1 rounded-md text-xs font-semibold border flex items-center"
+                                  :class="getFrigateConfidenceClass(event)"
+                                  title="Frigate Detection">
+                                <span class="mr-1.5 opacity-70">F:</span>
+                                <i :class="getLabelIcon(event.frigate_label)"></i>
                             </span>
                             <span v-if="event.gemini_label" 
-                                    class="px-2 py-1 rounded-md text-xs font-semibold border"
-                                    :class="getConfidenceClass(event)">
-                                G: {{ event.gemini_label }}
+                                    class="px-2 py-1 rounded-md text-xs font-semibold border flex items-center"
+                                    :class="getConfidenceClass(event)"
+                                    title="Gemini Analysis">
+                                <span class="mr-1.5 opacity-70">G:</span>
+                                <i :class="getLabelIcon(event.gemini_label)"></i>
                             </span>
                         </div>
                         <div v-if="event.final_label" class="pt-3 border-t border-slate-50">
-                            <span class="block text-center py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide"
+                            <span class="block text-center py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center"
                                   :class="getLabelClass(event.final_label)">
+                                <i :class="getLabelIcon(event.final_label)" class="mr-1.5"></i>
                                 {{ event.final_label }}
                             </span>
                         </div>
@@ -362,6 +379,13 @@
                                     <i class="fas fa-expand"></i>
                                 </a>
                             </div>
+                            <!-- 해상도 표시 (이미지 하단) -->
+                            <div v-if="imageResolution" class="flex justify-end px-1">
+                                <span class="text-xs text-slate-400 font-mono flex items-center">
+                                    <i class="fas fa-ruler-combined mr-1.5 opacity-70"></i>
+                                    {{ imageResolution }}
+                                </span>
+                            </div>
                         </div>
                         
                         <!-- 정보 -->
@@ -371,7 +395,7 @@
                                  class="bg-purple-50 border border-purple-200 rounded-xl p-4">
                                 <div class="flex items-center space-x-2">
                                     <i class="fas fa-flask text-purple-600"></i>
-                                    <span class="text-purple-700 font-bold text-sm">SYNTHETIC SAMPLE</span>
+                                    <span class="text-purple-700 font-bold text-sm">SYNTHETIC</span>
                                 </div>
                                 <p v-if="selectedEvent.source_event_id" class="text-xs text-purple-600 mt-2">
                                     Source: {{ selectedEvent.source_event_id }}
@@ -434,9 +458,8 @@
                                 <p class="text-sm text-rose-600">{{ selectedEvent.error_message }}</p>
                             </div>
                             
-                            <!-- 수동 라벨링 (mismatched 또는 gemini_error 상태일 때) -->
-                            <div v-if="['mismatched', 'gemini_error', 'pending'].includes(selectedEvent.status)"
-                                 class="pt-6 border-t border-slate-100">
+                            <!-- 수동 라벨링 (항상 표시) -->
+                            <div class="pt-6 border-t border-slate-100">
                                 <label class="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-3">Manual Labeling</label>
                                 <div class="grid grid-cols-3 gap-3">
                                     <button @click="labelEvent('person')"

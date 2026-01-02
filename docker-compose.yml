@@ -12,6 +12,7 @@ services:
       # 전체 프로젝트를 마운트해서 --reload 반영 (src/static/data/.env 포함)
       - ./:/app
     environment:
+      - TZ=Asia/Seoul
       # 환경변수는 .env 파일에서 자동으로 로드됨
       - PYTHONUNBUFFERED=1
     networks:

@@ -28,6 +28,9 @@ createApp({
         const selectedFamily = ref('');
         const selectedModel = ref('');
         const isSidebarOpen = ref(true);
+        const selectedLabelFilter = ref('');
+
+        const imageResolution = ref('');
 
         // Template refs
         const modalImage = ref(null);
@@ -40,7 +43,7 @@ createApp({
 
         // 탭 정의
         const tabs = computed(() => [
-            { id: 'all', label: 'All Events' },
+            { id: 'all', label: 'All Events', count: stats.value.total_images || 0, countClass: 'bg-slate-200 text-slate-700' },
             { id: 'classified', label: 'Classified', count: stats.value.by_status?.classified || 0, countClass: 'bg-emerald-100 text-emerald-700' },
             { id: 'mismatched', label: 'Mismatched', count: stats.value.by_status?.mismatched || 0, countClass: 'bg-amber-100 text-amber-700' },
             { id: 'pending', label: 'Pending', count: (stats.value.by_status?.pending || 0) + (stats.value.by_status?.gemini_error || 0), countClass: 'bg-rose-100 text-rose-700' },
@@ -71,15 +74,26 @@ createApp({
             loading.value = true;
             try {
                 let url = `/api/events?limit=${limit.value}&offset=${offset.value}`;
+                
+                // 라벨 필터 추가
+                if (selectedLabelFilter.value) {
+                    url += `&label=${selectedLabelFilter.value}`;
+                }
 
                 if (currentTab.value === 'classified') {
                     url = `/api/events/classified?limit=${limit.value}&offset=${offset.value}`;
+                    if (selectedLabelFilter.value) {
+                        url += `&label=${selectedLabelFilter.value}`;
+                    }
                 } else if (currentTab.value === 'mismatched') {
                     url = `/api/events/mismatched?limit=${limit.value}&offset=${offset.value}`;
                 } else if (currentTab.value === 'pending') {
                     url = `/api/events/pending`;
                 } else if (currentTab.value === 'synthetic') {
                     url = `/api/events/synthetic?limit=${limit.value}&offset=${offset.value}`;
+                    if (selectedLabelFilter.value) {
+                        url += `&label=${selectedLabelFilter.value}`;
+                    }
                 }
 
                 const res = await fetch(url);
@@ -93,12 +107,23 @@ createApp({
             }
         };
 
+        const onFilterChange = () => {
+            offset.value = 0;
+            fetchEvents();
+        };
+
         // 액션
         const openEventModal = (event) => {
             selectedEvent.value = event;
+            imageResolution.value = ''; // 초기화
         };
 
         const onImageLoad = (event) => {
+            // 이미지 해상도 저장
+            const img = event.target;
+            if (img) {
+                imageResolution.value = `${img.naturalWidth} x ${img.naturalHeight}`;
+            }
             // 이미지 로드 후 박스 그리기
             setTimeout(() => drawBoxes(), 100);
         };
@@ -520,6 +545,52 @@ createApp({
             return date.toLocaleString('ko-KR');
         };
 
+        const formatEventTime = (eventId) => {
+            if (!eventId) return '';
+            
+            // Synthetic ID 처리: synthetic_<source_id>_<timestamp>
+            // source_id가 있으면 그것을 사용, 없으면 eventId 자체 사용
+            let targetId = eventId;
+            if (eventId.startsWith('synthetic_')) {
+                // synthetic_ 제거
+                const parts = eventId.split('_');
+                if (parts.length >= 2) {
+                    // synthetic_ 다음 부분이 source_id (timestamp-random)
+                    // 예: synthetic_1767100464.562307-0zqscr_...
+                    // parts[1]이 1767100464.562307-0zqscr
+                    targetId = parts[1];
+                }
+            }
+
+            // timestamp 추출 (첫 번째 - 앞부분)
+            const timestampStr = targetId.split('-')[0];
+            const timestamp = parseFloat(timestampStr);
+            
+            if (isNaN(timestamp)) return eventId; // 파싱 실패 시 ID 반환
+
+            const date = new Date(timestamp * 1000);
+            
+            // 날짜와 시간 포맷팅
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+
+            return `${year}-${month}-${day}<br>${hours}:${minutes}:${seconds}`;
+        };
+
+        const getLabelIcon = (label) => {
+            if (!label) return 'fas fa-question';
+            const l = label.toLowerCase();
+            if (l === 'person') return 'fas fa-user';
+            if (l === 'cat') return 'fas fa-cat';
+            if (l === 'synthetic') return 'fas fa-flask';
+            if (l === 'background') return 'fas fa-ban';
+            return 'fas fa-tag';
+        };
+
         const getStatusClass = (status) => {
             const classes = {
                 classified: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
@@ -597,6 +668,7 @@ createApp({
         // 탭 변경 시 데이터 새로고침
         watch(currentTab, () => {
             offset.value = 0;
+            selectedLabelFilter.value = '';
             fetchEvents();
         });
 
@@ -641,10 +713,13 @@ createApp({
             selectedModel,
             modelOptions,
             isSidebarOpen,
+            selectedLabelFilter,
+            onFilterChange,
             boundBoxRecalculating,
             labelRegenerating,
-            modalImage, boxCanvas,
+            modalImage, boxCanvas, imageResolution,
             openEventModal, onImageLoad, drawBoxes, labelEvent, deleteEvent, retryGemini,
+
             triggerDailyRoutine, refreshModels, exportDataset, showLogs, fetchLogs,
             regenerateLabels,
             recalculateBoundBoxes,
@@ -653,7 +728,7 @@ createApp({
             reloadModelSelector,
             onFamilyChanged,
             applyModelSelection,
-            formatDate, getStatusClass, getStatusLabel, getLabelClass, getConfidenceClass, getFrigateConfidenceClass,
+            formatDate, formatEventTime, getStatusClass, getStatusLabel, getLabelClass, getLabelIcon, getConfidenceClass, getFrigateConfidenceClass,
             prevPage, nextPage
         };
     }

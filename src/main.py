@@ -50,6 +50,7 @@ logging.getLogger('src').setLevel(logging.INFO)
 logging.getLogger('src.api').setLevel(logging.INFO)
 logging.getLogger('src.services').setLevel(logging.INFO)
 logging.getLogger('uvicorn').setLevel(logging.INFO)
+logging.getLogger('uvicorn.access').setLevel(logging.WARNING)  # API 요청 로그 숨기기
 
 logger = logging.getLogger(__name__)
 

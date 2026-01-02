@@ -42,6 +42,7 @@ class StatsResponse(BaseModel):
     total_images: int
     by_class: dict
     by_status: dict
+    synthetic_count: int = 0
 
 
 class ModelSelectionSetRequest(BaseModel):
@@ -64,6 +65,13 @@ def _extract_frigate_confidence(event: dict) -> Optional[float]:
         return float(score) if score is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _get_event_sort_key(event: dict) -> str:
+    """이벤트 정렬 키 (event_id의 타임스탬프 기준)"""
+    # Synthetic인 경우 source_event_id 사용 (원본 시간)
+    # 일반 이벤트는 event_id 사용
+    return event.get('source_event_id') or event.get('event_id', '')
 
 
 def _decorate_event_for_dashboard(event: dict) -> dict:
@@ -127,6 +135,7 @@ async def get_processing_status():
 @router.get("/events")
 async def get_events(
     status: Optional[str] = Query(None, description="상태 필터 (classified, mismatched, pending, gemini_error, manual_labeled)"),
+    label: Optional[str] = Query(None, description="라벨 필터 (person, cat, background 등)"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
@@ -134,16 +143,21 @@ async def get_events(
     이벤트 목록 조회
     
     - status: 상태별 필터링
+    - label: 라벨별 필터링 (status가 없을 때만 적용됨)
     - limit: 반환할 최대 개수
     - offset: 시작 위치
     """
     if status:
         events = await dataset_manager.get_events_by_status(status)
+        # status 필터링 후 label 필터링 적용 (메모리 상에서)
+        if label:
+            events = [e for e in events if e.get('final_label') == label]
     else:
-        events = await dataset_manager.db.get_all_events(limit=1000)
+        # All events 탭: Synthetic 포함, Label 필터링 적용
+        events = await dataset_manager.db.get_all_events(limit=1000, include_synthetic=True, label=label)
     
-    # 최신순 정렬
-    events.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    # 최신순 정렬 (원본 시간 기준)
+    events.sort(key=_get_event_sort_key, reverse=True)
     
     # 페이지네이션
     paginated = events[offset:offset + limit]
@@ -163,12 +177,18 @@ async def get_events(
 
 @router.get("/events/classified")
 async def get_classified_events(
+    label: Optional[str] = Query(None, description="라벨 필터"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
     """분류 완료된 이벤트 목록"""
     events = await dataset_manager.get_classified_events()
-    events.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    # 라벨 필터링
+    if label:
+        events = [e for e in events if e.get('final_label') == label]
+        
+    events.sort(key=_get_event_sort_key, reverse=True)
     
     paginated = events[offset:offset + limit]
     
@@ -189,7 +209,7 @@ async def get_mismatched_events(
 ):
     """수동 라벨링이 필요한 이벤트 목록"""
     events = await dataset_manager.get_mismatched_events()
-    events.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    events.sort(key=_get_event_sort_key, reverse=True)
     
     paginated = events[offset:offset + limit]
     
@@ -220,6 +240,7 @@ async def get_pending_events():
 
 @router.get("/events/synthetic")
 async def get_synthetic_events(
+    label: Optional[str] = Query(None, description="라벨 필터"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
@@ -228,7 +249,12 @@ async def get_synthetic_events(
     
     # is_synthetic=1 필터링
     synthetic_events = [e for e in all_events if e.get('is_synthetic') == 1]
-    synthetic_events.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    # 라벨 필터링
+    if label:
+        synthetic_events = [e for e in synthetic_events if e.get('final_label') == label]
+        
+    synthetic_events.sort(key=_get_event_sort_key, reverse=True)
     
     paginated = synthetic_events[offset:offset + limit]
     
@@ -625,3 +651,70 @@ async def health_check():
         "data_dir": str(settings.data_dir),
         "event_processor_running": is_running
     }
+
+
+# ===== Export Review API =====
+
+@router.get("/export/list")
+async def list_exported_files():
+    """Export된 파일 목록 반환"""
+    export_dir = settings.data_dir / "yolo_export"
+    if not export_dir.exists():
+        return {"train": [], "val": []}
+    
+    result = {"train": [], "val": []}
+    
+    for split in ["train", "val"]:
+        img_dir = export_dir / split / "images"
+        if img_dir.exists():
+            # 파일명만 리스트로 반환
+            result[split] = [f.name for f in img_dir.glob("*.jpg")]
+                
+    return result
+
+@router.get("/export/image/{split}/{filename}")
+async def get_exported_image(split: str, filename: str):
+    """Export된 이미지 반환"""
+    if split not in ["train", "val"]:
+        raise HTTPException(status_code=400, detail="Invalid split")
+        
+    file_path = settings.data_dir / "yolo_export" / split / "images" / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    return FileResponse(file_path)
+
+@router.get("/export/label/{split}/{filename}")
+async def get_exported_label(split: str, filename: str):
+    """Export된 라벨 반환"""
+    if split not in ["train", "val"]:
+        raise HTTPException(status_code=400, detail="Invalid split")
+        
+    # 이미지 파일명에서 .txt로 변경
+    txt_filename = Path(filename).stem + ".txt"
+    file_path = settings.data_dir / "yolo_export" / split / "labels" / txt_filename
+    
+    from fastapi.responses import PlainTextResponse
+    
+    if not file_path.exists():
+        # 라벨 파일이 없는 경우 (background 등) 빈 내용 반환
+        return PlainTextResponse("")
+        
+    with open(file_path, 'r') as f:
+        content = f.read()
+        
+    return PlainTextResponse(content)
+
+@router.get("/export/summary")
+async def get_export_summary():
+    """Export 요약 정보 반환"""
+    summary_path = settings.data_dir / "yolo_export" / "summary.md"
+    from fastapi.responses import PlainTextResponse
+    
+    if not summary_path.exists():
+        return PlainTextResponse("No summary available.")
+        
+    with open(summary_path, 'r') as f:
+        content = f.read()
+        
+    return PlainTextResponse(content)

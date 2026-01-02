@@ -2,6 +2,7 @@
 import json
 import logging
 import shutil
+import random
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
@@ -42,7 +43,7 @@ class DatasetManager:
         self.synthetic_dir = settings.data_dir / "synthetic"
         self.synthetic_dir.mkdir(parents=True, exist_ok=True)
         self.db = db
-        self.synthetic_probability = 0.1  # 10% 확률
+        self.synthetic_probability = 0.3  # 30% 확률
     
     async def initialize(self):
         """데이터베이스 초기화"""
@@ -443,14 +444,27 @@ class DatasetManager:
         # is_bound_box=False 및 라벨링 안 된 이벤트 필터링
         # - get_classified_events()만 사용하므로 mismatched/pending/gemini_error는 원칙적으로 제외되지만,
         #   데이터 정합성 문제를 대비해 안전장치를 둔다.
-        valid_events = [
-            e for e in all_events.values()
-            if e.get('is_bound_box', 0) == 1
-            and e.get('status') != EventStatus.MISMATCHED.value
-            and has_yolo_label_file(e)
-        ]
+        # - background(negative sample)는 bound_box가 없어도(0이어도) 허용한다.
+        valid_events = []
+        for e in all_events.values():
+            # 1. Status check
+            if e.get('status') == EventStatus.MISMATCHED.value:
+                continue
+            
+            # 2. Label file check
+            if not has_yolo_label_file(e):
+                continue
+            
+            # 3. Bounding box check
+            label = e.get('final_label')
+            if label in ['person', 'cat']:
+                # Positive samples must have a bounding box
+                if e.get('is_bound_box', 0) != 1:
+                    continue
+            
+            valid_events.append(e)
         
-        logger.info(f"Export 대상: 전체 {len(all_events)}개 중 is_bound_box=True {len(valid_events)}개")
+        logger.info(f"Export 대상: 전체 {len(all_events)}개 중 유효한 이벤트 {len(valid_events)}개")
         
         # 클래스별로 분류
         person_events = [e for e in valid_events if e.get('final_label') == 'person']
@@ -469,54 +483,113 @@ class DatasetManager:
         
         logger.info(f"Export 목표: person={base_count}, cat={base_count}, background={background_count}")
         
-        # 우선순위 정렬 함수 (낮을수록 우선)
-        def event_priority(event):
+        def get_confidence(event):
+            """이벤트의 Frigate confidence 추출"""
+            try:
+                fd = event.get('frigate_data', {})
+                # database.py에서 이미 dict로 파싱되었을 것임
+                if isinstance(fd, str):
+                    fd = json.loads(fd)
+                return float(fd.get('data', {}).get('score', 0.0))
+            except:
+                return 0.0
+
+        def select_events_weighted(events, target_count):
             """
-            0: manual_labeled (사람이 확정한 라벨)
-            1: garden 카메라
-            2: 나머지
+            가중치 랜덤 선별 로직
+            Returns: List of (event, reason, score)
             """
-            status = event.get('status', '')
-            camera = ''
+            # Tier 0: Manual Labeled
+            manual_events = [e for e in events if e.get('status') == EventStatus.MANUAL_LABELED.value]
             
-            frigate_data = event.get('frigate_data')
-            if isinstance(frigate_data, dict):
-                camera = frigate_data.get('camera', '')
+            # Tier 1 & 2: Others
+            other_events = [e for e in events if e.get('status') != EventStatus.MANUAL_LABELED.value]
             
-            if status == EventStatus.MANUAL_LABELED.value:
-                return 0
-            elif camera == 'garden':
-                return 1
-            else:
-                return 2
-        
-        # 각 클래스별 우선순위 정렬 후 선택
-        person_events.sort(key=event_priority)
-        cat_events.sort(key=event_priority)
-        background_events.sort(key=event_priority)
-        
-        sampled_person = person_events[:base_count]
-        sampled_cat = cat_events[:base_count]
-        sampled_background = background_events[:background_count]
+            # Manual은 무조건 포함
+            selected_with_info = []
+            for e in manual_events:
+                selected_with_info.append({
+                    'event': e,
+                    'reason': 'Manual Labeled (Tier 0)',
+                    'score': 999.0  # Highest priority
+                })
+            
+            # 부족분 계산
+            needed = target_count - len(selected_with_info)
+            
+            if needed > 0 and other_events:
+                # 점수 계산 및 정렬
+                scored_events = []
+                for e in other_events:
+                    conf = get_confidence(e)
+                    
+                    camera = ''
+                    fd = e.get('frigate_data')
+                    if isinstance(fd, dict):
+                        camera = fd.get('camera', '')
+                    
+                    is_garden = (camera == 'garden')
+                    
+                    # 점수 공식: (1.0 - Confidence) + Garden Bonus + Random Noise
+                    # Confidence가 낮을수록(어려운 데이터) 점수가 높음
+                    score = (1.0 - conf) + (0.5 if is_garden else 0) + random.uniform(0, 0.3)
+                    scored_events.append((score, e))
+                
+                # 점수 높은 순 정렬
+                scored_events.sort(key=lambda x: x[0], reverse=True)
+                
+                # 상위 needed 개수만큼 선택
+                for score, e in scored_events[:needed]:
+                    selected_with_info.append({
+                        'event': e,
+                        'reason': 'Weighted Selection (Tier 1/2)',
+                        'score': score
+                    })
+            
+            return selected_with_info
+
+        def select_background_random(events, target_count):
+            """
+            Background 선별 로직
+            Returns: List of (event, reason, score)
+            """
+            # 전체 셔플
+            candidates = list(events)
+            random.shuffle(candidates)
+            
+            selected_with_info = []
+            for e in candidates[:target_count]:
+                selected_with_info.append({
+                    'event': e,
+                    'reason': 'Random Background',
+                    'score': 0.0
+                })
+            
+            return selected_with_info
+
+        # 각 클래스별 선별 로직 적용
+        sampled_person_info = select_events_weighted(person_events, base_count)
+        sampled_cat_info = select_events_weighted(cat_events, base_count)
+        sampled_background_info = select_background_random(background_events, background_count)
         
         logger.info(
-            f"실제 Export: person={len(sampled_person)}, cat={len(sampled_cat)}, background={len(sampled_background)}"
+            f"실제 Export: person={len(sampled_person_info)}, cat={len(sampled_cat_info)}, background={len(sampled_background_info)}"
         )
         
         # 합치기 및 섞기
-        import random
-        valid_events = sampled_person + sampled_cat + sampled_background
-        random.shuffle(valid_events)
+        all_selected_info = sampled_person_info + sampled_cat_info + sampled_background_info
+        random.shuffle(all_selected_info)
         
         # 80% train, 20% val
-        split_idx = int(len(valid_events) * 0.8)
-        train_events = valid_events[:split_idx]
-        val_events = valid_events[split_idx:]
+        split_idx = int(len(all_selected_info) * 0.8)
+        train_info = all_selected_info[:split_idx]
+        val_info = all_selected_info[split_idx:]
         
-        def copy_event_files(events: List[Dict], img_dir: Path, lbl_dir: Path) -> int:
+        def copy_event_files(info_list: List[Dict], img_dir: Path, lbl_dir: Path) -> int:
             """이벤트 파일 복사 (성공한 개수 반환)"""
             count = 0
-            for event in events:
+            for item in info_list:
+                event = item['event']
                 src_img = Path(event['image_path'])
                 if not src_img.exists():
                     logger.warning(f"이미지 없음: {src_img}")
@@ -534,8 +607,44 @@ class DatasetManager:
                 count += 1
             return count
         
-        train_count = copy_event_files(train_events, train_images, train_labels)
-        val_count = copy_event_files(val_events, val_images, val_labels)
+        train_count = copy_event_files(train_info, train_images, train_labels)
+        val_count = copy_event_files(val_info, val_images, val_labels)
+        
+        # Summary 파일 생성
+        summary_path = output_dir / "summary.md"
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            f.write("# YOLO Dataset Export Summary\n\n")
+            f.write(f"- **Date**: {datetime.now().isoformat()}\n")
+            f.write(f"- **Total Exported**: {len(all_selected_info)}\n")
+            f.write(f"- **Train**: {train_count}\n")
+            f.write(f"- **Val**: {val_count}\n\n")
+            
+            f.write("## Class Distribution\n")
+            f.write(f"- **Person**: {len(sampled_person_info)}\n")
+            f.write(f"- **Cat**: {len(sampled_cat_info)}\n")
+            f.write(f"- **Background**: {len(sampled_background_info)}\n\n")
+            
+            f.write("## Selection Details\n")
+            f.write("| Class | Event ID | Reason | Score | Set |\n")
+            f.write("|---|---|---|---|---|\n")
+            
+            # Helper to find set
+            train_ids = {item['event']['event_id'] for item in train_info}
+            
+            # Sort by class then score
+            all_selected_info.sort(key=lambda x: (x['event'].get('final_label', 'background') or 'background', -x['score']))
+            
+            for item in all_selected_info:
+                event = item['event']
+                label = event.get('final_label', 'background') or 'background'
+                eid = event['event_id']
+                reason = item['reason']
+                score = f"{item['score']:.4f}"
+                dataset_type = "Train" if eid in train_ids else "Val"
+                
+                f.write(f"| {label} | {eid} | {reason} | {score} | {dataset_type} |\n")
+        
+        logger.info(f"Summary generated: {summary_path}")
         
         # YOLO 데이터셋 설정 파일 생성
         config = {

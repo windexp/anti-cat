@@ -179,8 +179,8 @@ class FrigateAPI:
             이미지 바이트 데이터 또는 None
         """
         try:
-            # Frigate timestamp snapshot API: /api/{camera}/snapshot/{timestamp}.jpg
-            url = f"{self.base_url}/api/{camera_name}/{int(timestamp)}/snapshot.jpg"
+            # Frigate recordings snapshot API: /api/{camera}/recordings/{timestamp}/snapshot.jpg
+            url = f"{self.base_url}/api/{camera_name}/recordings/{timestamp}/snapshot.jpg"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             

@@ -166,8 +166,9 @@ class Database:
                         event_id, status, frigate_label, frigate_data,
                         image_path, snapshot_downloaded, snapshot_error,
                         gemini_result, final_label,
-                        created_at, updated_at, error_message
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, error_message,
+                        is_synthetic, source_event_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     event_data['event_id'],
                     event_data['status'],
@@ -180,7 +181,9 @@ class Database:
                     event_data.get('final_label'),
                     event_data['created_at'],
                     event_data['updated_at'],
-                    event_data.get('error_message')
+                    event_data.get('error_message'),
+                    event_data.get('is_synthetic', 0),
+                    event_data.get('source_event_id')
                 ))
                 await db.commit()
             return True
@@ -249,14 +252,25 @@ class Database:
             rows = await cursor.fetchall()
             return [self._row_to_dict(row) for row in rows]
     
-    async def get_all_events(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    async def get_all_events(self, limit: int = 100, offset: int = 0, include_synthetic: bool = True, label: Optional[str] = None) -> List[Dict[str, Any]]:
         """전체 이벤트 목록 조회 (스냅샷이 있는 것만, 페이지네이션)"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM events WHERE snapshot_downloaded = 1 ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset)
-            )
+            
+            query = "SELECT * FROM events WHERE snapshot_downloaded = 1"
+            params = []
+            
+            if not include_synthetic:
+                query += " AND (is_synthetic = 0 OR is_synthetic IS NULL)"
+            
+            if label:
+                query += " AND final_label = ?"
+                params.append(label)
+            
+            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            
+            cursor = await db.execute(query, tuple(params))
             rows = await cursor.fetchall()
             return [self._row_to_dict(row) for row in rows]
     
@@ -335,6 +349,7 @@ class Database:
                 "by_class": {
                     "person": label_stats.get("person", 0),
                     "cat": label_stats.get("cat", 0),
+                    "background": label_stats.get("background", 0),
                     "others": label_stats.get("others", 0)
                 },
                 "synthetic_count": synthetic_count
