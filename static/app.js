@@ -9,7 +9,6 @@ createApp({
         const loading = ref(false);
         const currentTab = ref('all');
         const selectedEvent = ref(null);
-        const processorRunning = ref(false);
         const offset = ref(0);
         const limit = ref(20);
         const toastVisible = ref(false);
@@ -57,16 +56,6 @@ createApp({
                 stats.value = await res.json();
             } catch (e) {
                 console.error('통계 조회 실패:', e);
-            }
-        };
-
-        const fetchStatus = async () => {
-            try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
-                processorRunning.value = data.is_running;
-            } catch (e) {
-                console.error('상태 조회 실패:', e);
             }
         };
 
@@ -685,19 +674,17 @@ createApp({
             toastMessage.value = '';
             
             fetchStats();
-            fetchStatus();
             fetchEvents();
 
             // 주기적으로 통계 업데이트
             setInterval(() => {
                 fetchStats();
-                fetchStatus();
             }, 30000);
         });
 
         return {
             stats, events, totalEvents, loading, currentTab, selectedEvent,
-            processorRunning, offset, limit, toastVisible, toastMessage, toastType, tabs,
+            offset, limit, toastVisible, toastMessage, toastType, tabs,
             showLogModal, logs, logsLoading,
             modelRefreshRunning,
             showModelSelector,
