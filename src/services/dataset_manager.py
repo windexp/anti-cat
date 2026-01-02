@@ -625,8 +625,8 @@ class DatasetManager:
             f.write(f"- **Background**: {len(sampled_background_info)}\n\n")
             
             f.write("## Selection Details\n")
-            f.write("| Class | Event ID | Reason | Score | Set |\n")
-            f.write("|---|---|---|---|---|\n")
+            f.write("| Class | Event ID | Camera | Reason | Score | Set |\n")
+            f.write("|---|---|---|---|---|---|\n")
             
             # Helper to find set
             train_ids = {item['event']['event_id'] for item in train_info}
@@ -638,11 +638,22 @@ class DatasetManager:
                 event = item['event']
                 label = event.get('final_label', 'background') or 'background'
                 eid = event['event_id']
+
+                camera = ''
+                try:
+                    fd = event.get('frigate_data')
+                    if isinstance(fd, str):
+                        fd = json.loads(fd)
+                    if isinstance(fd, dict):
+                        camera = fd.get('camera', '') or ''
+                except Exception:
+                    camera = ''
+
                 reason = item['reason']
                 score = f"{item['score']:.4f}"
                 dataset_type = "Train" if eid in train_ids else "Val"
                 
-                f.write(f"| {label} | {eid} | {reason} | {score} | {dataset_type} |\n")
+                f.write(f"| {label} | {eid} | {camera} | {reason} | {score} | {dataset_type} |\n")
         
         logger.info(f"Summary generated: {summary_path}")
         
