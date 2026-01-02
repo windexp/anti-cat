@@ -11,149 +11,93 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased">
     <div id="app" v-cloak>
-        <!-- 사이드바 토글 버튼 (왼쪽 고정, 햄버거 단일 버튼) -->
-        <button
-            @click="isSidebarOpen = !isSidebarOpen"
-            class="fixed left-4 top-4 z-[60] w-10 h-10 text-slate-600 hover:text-slate-800 rounded-full flex items-center justify-center transition-all hover:bg-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-            :aria-label="isSidebarOpen ? 'Close sidebar' : 'Open sidebar'">
-            <i class="fas fa-bars"></i>
-        </button>
-
-        <!-- 사이드바 오버레이 백드롭 -->
-        <div v-if="isSidebarOpen"
-             class="fixed inset-0 z-40 bg-black/30"
-             @click="isSidebarOpen = false"></div>
-
-        <!-- 사이드바 오버레이 (왼쪽 슬라이드) -->
+        <!-- 사이드바 (push 방식) -->
         <aside
-            class="fixed left-0 top-0 z-50 h-full w-72 bg-white/95 backdrop-blur border-r border-slate-200 transform transition-transform duration-300"
-            :class="isSidebarOpen ? 'translate-x-0' : '-translate-x-full'">
+            class="fixed left-0 top-0 z-50 h-full bg-slate-50 transform transition-all duration-300"
+            :class="isSidebarOpen ? 'w-72' : 'w-16'">
 
             <!-- Sidebar content (nav 높이만큼 여백) -->
-            <div class="pt-4 px-4 pb-6 space-y-6 h-full overflow-y-auto">
+            <div class="pt-6 px-3 pb-6 space-y-8 h-full overflow-y-auto">
 
-                <!-- 브랜드 + 상태 + 로그 -->
-                <div class="space-y-3">
-                    <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent flex items-center justify-end">
-                        <i class="fas fa-cat mr-2 text-blue-600"></i>Anti-Cat
+                <!-- 브랜드 / 토글 버튼 -->
+                <button 
+                    @click="isSidebarOpen = !isSidebarOpen"
+                    class="w-full text-left px-3 py-2 rounded-lg hover:bg-white transition-all group"
+                    :aria-label="isSidebarOpen ? 'Close sidebar' : 'Open sidebar'">
+                    <h1 class="text-2xl font-bold flex items-center">
+                        <i class="fas fa-cat text-blue-600 transition-all" :class="isSidebarOpen ? 'mr-2' : 'mx-auto'"></i>
+                        <span v-if="isSidebarOpen" class="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">AntiCat</span>
                     </h1>
-                    <button @click="showLogs"
-                            class="w-full px-4 py-2 bg-white border border-slate-200 hover:border-amber-300 hover:text-amber-600 text-slate-600 rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow flex items-center justify-center group">
-                        <i class="fas fa-file-alt mr-2 text-slate-400 group-hover:text-amber-500 transition-colors"></i>
-                        View Logs
-                    </button>
-                </div>
+                </button>
 
                 <!-- 작업 섹션 -->
-                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                    <h3 class="text-sm font-bold text-slate-800 mb-4 flex items-center">
-                        <i class="fas fa-play-circle mr-2 text-slate-400"></i>
-                        작업
+                <div v-if="isSidebarOpen" class="space-y-2">
+                    <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wider px-3 mb-2">
+                        Execition
                     </h3>
                     <button @click="triggerDailyRoutine" 
-                            class="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all shadow-sm flex items-center justify-center">
-                        <i class="fas fa-play mr-2"></i>
-                        <span>Run Routine</span>
+                            class="w-full px-3 py-2.5 text-slate-700 hover:bg-white rounded-lg text-sm font-medium transition-all flex items-center group">
+                        <i class="fas fa-play mr-3 text-slate-500 group-hover:text-slate-700 transition-transform group-hover:scale-110"></i>
+                        <span>Daily Routine</span>
                     </button>
                 </div>
 
                 <!-- 데이터 관리 섹션 -->
-                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                    <h3 class="text-sm font-bold text-slate-800 mb-4 flex items-center">
-                        <i class="fas fa-database mr-2 text-slate-400"></i>
-                        데이터 관리
+                <div v-if="isSidebarOpen" class="space-y-2">
+                    <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wider px-3 mb-2">
+                        Data Management<Main></Main>
                     </h3>
-                    <div class="space-y-2">
+                    <div class="space-y-1">
                         <button @click="exportDataset" 
-                                class="w-full px-4 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow-md flex items-center justify-center">
-                            <i class="fas fa-download mr-2"></i>
-                            <span>Export Dataset</span>
+                                class="w-full px-3 py-2.5 text-slate-700 hover:bg-white rounded-lg text-sm font-medium transition-all flex items-center group">
+                            <i class="fas fa-download mr-3 text-slate-500 group-hover:text-slate-700 transition-colors"></i>
+                            <span>Export</span>
                         </button>
                         <button @click="regenerateLabels" 
                                 :disabled="labelRegenerating"
-                                class="w-full px-4 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-                            <i class="fas fa-sync-alt mr-2" :class="{ 'fa-spin': labelRegenerating }"></i>
-                            <span>Regen Labels</span>
+                                class="w-full px-3 py-2.5 text-slate-700 hover:bg-white rounded-lg text-sm font-medium transition-all flex items-center disabled:opacity-50 disabled:cursor-not-allowed group">
+                            <i class="fas fa-sync-alt mr-3 text-slate-500 group-hover:text-slate-700 transition-colors" :class="{ 'fa-spin': labelRegenerating }"></i>
+                            <span>Regenerate Labels</span>
                         </button>
                     </div>
                 </div>
 
                 <!-- 설정 섹션 -->
-                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                    <h3 class="text-sm font-bold text-slate-800 mb-4 flex items-center">
-                        <i class="fas fa-cog mr-2 text-slate-400"></i>
-                        설정
+                <div v-if="isSidebarOpen" class="space-y-2">
+                    <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wider px-3 mb-2">
+                        Settings
                     </h3>
-                    <div class="space-y-2">
+                    <div class="space-y-1">
+                        <button @click="toggleModelSelector"
+                                class="w-full px-3 py-2.5 text-slate-700 hover:bg-white rounded-lg text-sm font-medium transition-all flex items-center group">
+                            <i class="fas fa-sliders mr-3 text-slate-500 group-hover:text-slate-700 transition-colors"></i>
+                            <span>Model Selection</span>
+                        </button>
                         <button @click="refreshModels"
                                 :disabled="modelRefreshRunning"
-                                class="bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:bg-slate-50 disabled:text-slate-400 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center justify-center disabled:cursor-not-allowed"
-                                :class="'w-full px-4 py-2.5'">
-                            <i class="fas fa-arrows-rotate mr-2" :class="{ 'fa-spin': modelRefreshRunning }"></i>
-                            <span>모델 업데이트</span>
+                                class="w-full px-3 py-2.5 text-slate-700 hover:bg-white rounded-lg text-sm font-medium transition-all flex items-center disabled:opacity-50 disabled:cursor-not-allowed group">
+                            <i class="fas fa-arrows-rotate mr-3 text-slate-500 group-hover:text-slate-700 transition-colors" :class="{ 'fa-spin': modelRefreshRunning }"></i>
+                            <span>Model Update</span>
                         </button>
-                        <div class="relative">
-                            <button @click="toggleModelSelector"
-                                    class="bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center justify-center"
-                                    :class="'w-full px-4 py-2.5'">
-                                <i class="fas fa-sliders mr-2"></i>
-                                <span>모델 선택</span>
-                            </button>
-
-                            <!-- 모델 선택 드롭다운 -->
-                            <div v-if="showModelSelector"
-                                 class="absolute mt-2 min-w-[28rem] bg-white border border-slate-200 rounded-xl shadow-lg p-4 z-50"
-                                 class="absolute mt-2 min-w-[28rem] bg-white border border-slate-200 rounded-xl shadow-lg p-4 z-50 left-0 w-full top-full">
-                                <div class="flex items-center justify-between mb-3">
-                                    <div class="text-sm font-bold text-slate-800">Gemini 모델 선택</div>
-                                    <button @click="closeModelSelector"
-                                            class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="block text-xs font-semibold text-slate-500 mb-1">Family (x.y)</label>
-                                        <select v-model="selectedFamily"
-                                                @change="onFamilyChanged"
-                                                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200">
-                                            <option disabled value="">선택하세요</option>
-                                            <option v-for="f in modelFamilies" :key="f.family" :value="f.family">
-                                                {{ f.family }} (현재: {{ f.selected_model_name || '미설정' }})
-                                            </option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-semibold text-slate-500 mb-1">Model</label>
-                                        <select v-model="selectedModel"
-                                                :disabled="!selectedFamily"
-                                                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-slate-200">
-                                            <option disabled value="">선택하세요</option>
-                                            <option v-for="o in modelOptions" :key="o.model_name" :value="o.model_name">
-                                                {{ o.model_name }} (mm: {{ o.multimodal_status || 'unknown' }})
-                                            </option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center justify-end mt-4 space-x-2">
-                                    <button @click="reloadModelSelector" :disabled="modelSelectorLoading"
-                                            class="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                                        새로고침
-                                    </button>
-                                    <button @click="applyModelSelection" :disabled="modelSelectorLoading || !selectedFamily || !selectedModel"
-                                            class="px-3 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed">
-                                        적용
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
+                </div>
+
+                <!-- 시스템 섹션 -->
+                <div v-if="isSidebarOpen" class="space-y-2">
+                    <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wider px-3 mb-2">
+                        System
+                    </h3>
+                    <button @click="showLogs"
+                            class="w-full px-3 py-2.5 text-slate-700 hover:bg-white rounded-lg text-sm font-medium transition-all flex items-center group">
+                        <i class="fas fa-file-alt mr-3 text-slate-500 group-hover:text-slate-700 transition-colors"></i>
+                        <span>View Logs</span>
+                    </button>
+                </div>
             </div>
         </aside>
 
-        <!-- 메인 컨텐츠 (중앙 정렬) -->
+        <!-- 메인 컨텐츠 (중앙 정렬, 사이드바에 따라 이동) -->
+        <div class="transition-all duration-300" :style="{ marginLeft: isSidebarOpen ? '288px' : '64px' }">
         <div class="max-w-7xl mx-auto px-6 py-8">
             <main class="min-w-0 max-w-6xl mx-auto">
             <div>
@@ -463,6 +407,74 @@
             </div>
         </div>
 
+        <!-- 모델 선택 모달 -->
+        <div v-if="showModelSelector" 
+             class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+             @click.self="closeModelSelector">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col">
+                <!-- 헤더 -->
+                <div class="px-8 py-6 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-800">Gemini Model Selection</h2>
+                        <p class="text-sm text-slate-500 mt-1">Choose the AI model for classification</p>
+                    </div>
+                    <button @click="closeModelSelector" 
+                            class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- 내용 -->
+                <div class="p-8">
+                    <div v-if="modelSelectorLoading" class="flex items-center justify-center py-12">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+                    <div v-else class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-2">Model Family</label>
+                            <select v-model="selectedFamily"
+                                    @change="onFamilyChanged"
+                                    class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option disabled value="">Please select a family</option>
+                                <option v-for="f in modelFamilies" :key="f.family" :value="f.family">
+                                    {{ f.family }} (Current: {{ f.selected_model_name || 'Not set' }})
+                                </option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-2">Model Version</label>
+                            <select v-model="selectedModel"
+                                    :disabled="!selectedFamily"
+                                    class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option disabled value="">Please select a model</option>
+                                <option v-for="o in modelOptions" :key="o.model_name" :value="o.model_name">
+                                    {{ o.model_name }} (mm: {{ o.multimodal_status || 'unknown' }})
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 푸터 -->
+                <div class="px-8 py-4 border-t border-slate-200 flex justify-end space-x-3">
+                    <button @click="reloadModelSelector" 
+                            :disabled="modelSelectorLoading"
+                            class="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-sync-alt mr-2"></i>Reload
+                    </button>
+                    <button @click="closeModelSelector" 
+                            class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-all">
+                        Cancel
+                    </button>
+                    <button @click="applyModelSelection" 
+                            :disabled="modelSelectorLoading || !selectedFamily || !selectedModel"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-check mr-2"></i>Apply
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- 로그 모달 -->
         <div v-if="showLogModal" 
              class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -520,6 +532,7 @@
         </transition>
 
             </main>
+        </div>
         </div>
     </div>
 

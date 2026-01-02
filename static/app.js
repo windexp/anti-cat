@@ -25,7 +25,7 @@ createApp({
         const modelFamilies = ref([]);
         const selectedFamily = ref('');
         const selectedModel = ref('');
-        const isSidebarOpen = ref(true);
+        const isSidebarOpen = ref(false);
         const selectedLabels = ref([]);
 
         const imageResolution = ref('');
