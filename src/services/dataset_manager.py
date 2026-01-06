@@ -45,7 +45,7 @@ class DatasetManager:
         self.synthetic_dir = settings.data_dir / "synthetic"
         self.synthetic_dir.mkdir(parents=True, exist_ok=True)
         self.db = db
-        self.synthetic_probability = 0.3  # 30% 확률
+        # 카메라별 synthetic 확률은 settings에서 관리
     
     async def initialize(self):
         """데이터베이스 초기화"""
@@ -881,10 +881,6 @@ class DatasetManager:
         from src.api.frigate_api import FrigateAPI
         
         try:
-            # 10% 확률 체크
-            if random.random() > self.synthetic_probability:
-                return None
-            
             # 원본 이벤트 데이터 추출
             source_event_id = source_event['event_id']
             frigate_data = source_event.get('frigate_data')
@@ -896,6 +892,18 @@ class DatasetManager:
             camera = frigate_data.get('camera')
             if not camera:
                 logger.warning(f"[{source_event_id}] camera 정보 없음")
+                return None
+            
+            # 카메라별 확률 적용
+            if camera == 'main_entrance':
+                probability = settings.synthetic_probability_main_entrance
+            elif camera == 'garden':
+                probability = settings.synthetic_probability_garden
+            else:
+                probability = settings.synthetic_probability_default
+            
+            if random.random() > probability:
+                logger.debug(f"[{source_event_id}] Synthetic 생성 스킵 (camera={camera}, probability={probability:.0%})")
                 return None
             
             # 원본 이벤트의 timestamp (created_at 사용)

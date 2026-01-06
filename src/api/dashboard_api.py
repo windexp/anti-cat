@@ -95,7 +95,7 @@ def _decorate_event_for_dashboard(event: dict) -> dict:
         if detected_objects:
             event_copy['gemini_boxes'] = [obj.get('bbox_normalized') for obj in detected_objects if 'bbox_normalized' in obj]
         
-        logger.info(f"Event {event['event_id']}: detected_objects={len(detected_objects)}, gemini_boxes={event_copy.get('gemini_boxes')}")
+        # logger.info(f"Event {event['event_id']}: detected_objects={len(detected_objects)}, gemini_boxes={event_copy.get('gemini_boxes')}")
 
     event_copy['frigate_confidence'] = _extract_frigate_confidence(event)
     
@@ -423,6 +423,10 @@ async def get_gemini_model_selection():
 
         model_name = m.get('model_name') or ''
         env_name = model_name.split('models/', 1)[1] if model_name.startswith('models/') else model_name
+        
+        # Gemini 2.0 모델 제외 (더 이상 지원되지 않음)
+        if env_name.startswith('gemini-2.0'):
+            continue
 
         entry = {
             "model_name": env_name,
@@ -470,6 +474,11 @@ async def set_gemini_model_selection(request: ModelSelectionSetRequest):
             continue
         mn = m.get('model_name') or ''
         env_name = mn.split('models/', 1)[1] if mn.startswith('models/') else mn
+        
+        # Gemini 2.0 모델 제외 (더 이상 지원되지 않음)
+        if env_name.startswith('gemini-2.0'):
+            continue
+            
         allowed.add(env_name)
 
     if selected not in allowed:
@@ -497,22 +506,21 @@ async def set_gemini_model_selection(request: ModelSelectionSetRequest):
         "selected_model_name": selected,
         "selected_models": processor.gemini_service.models if processor.gemini_service else [],
     }
-
+# ===== 수동 이벤트 처리 트리거 API =====
 @router.post("/process/trigger")
 async def trigger_polling():
-    """이벤트 폴링 수동 트리거"""
+    """이벤트 폴링 수동 트리거 (백그라운드 실행)"""
     logger.info("=== trigger_polling 함수 호출됨 ===")
     try:
         from src.main import get_event_processor
         processor = get_event_processor()
         logger.info("EventProcessor 가져오기 성공")
-        await processor._fetch_and_process_events()
-        logger.info("이벤트 처리 완료")
         
-        return {
-            "status": "success",
-            "message": "이벤트 폴링이 완료되었습니다"
-        }
+        # 백그라운드로 실행
+        result = processor.trigger_background_processing()
+        logger.info(f"백그라운드 처리 시작: {result}")
+        
+        return result
     except Exception as e:
         logger.error(f"trigger_polling 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -22,8 +22,13 @@ log_file = log_dir / "anti-cat.log"
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 
-# 포맷터
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# 포맷터 (로컬 타임존 사용)
+import time
+logging.Formatter.converter = time.localtime
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # 파일 핸들러 (rotating, 10MB, 최대 5개 백업)
 file_handler = RotatingFileHandler(

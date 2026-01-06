@@ -124,6 +124,12 @@
             
             <!-- Dashboard Page -->
             <div v-if="currentPage === 'dashboard'">
+                <!-- 백그라운드 처리 상태 표시 -->
+                <div v-if="backgroundProcessing" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center">
+                    <i class="fas fa-spinner fa-spin text-blue-600 mr-3"></i>
+                    <span class="text-sm text-blue-800 font-medium">백그라운드에서 이벤트 처리 중...</span>
+                </div>
+                
                 <!-- 탭 + 라벨 필터 (서로 다른 줄) -->
                 <div class="mb-6 space-y-3">
                     <!-- 1) 이벤트 필터 탭 -->

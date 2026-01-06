@@ -20,6 +20,7 @@ createApp({
         const logsLoading = ref(false);
         const modelRefreshRunning = ref(false);
         const labelRegenerating = ref(false);
+        const backgroundProcessing = ref(false);  // 백그라운드 처리 상태
 
         const showModelSelector = ref(false);
         const modelSelectorLoading = ref(false);
@@ -69,6 +70,11 @@ createApp({
             try {
                 const res = await fetch('/api/stats');
                 stats.value = await res.json();
+                
+                // 백그라운드 처리 상태도 확인
+                const statusRes = await fetch('/api/status');
+                const statusData = await statusRes.json();
+                backgroundProcessing.value = statusData.background_processing || false;
             } catch (e) {
                 console.error('통계 조회 실패:', e);
             }
@@ -376,11 +382,15 @@ createApp({
 
         const triggerDailyRoutine = async () => {
             try {
-                showToast('일일 루틴을 시작합니다...', 'success');
                 const res = await fetch('/api/process/trigger', { method: 'POST' });
+                const data = await res.json();
 
                 if (res.ok) {
-                    showToast('일일 루틴이 완료되었습니다', 'success');
+                    if (data.status === 'already_running') {
+                        showToast('이미 백그라운드 처리가 실행 중입니다', 'warning');
+                    } else {
+                        showToast('백그라운드에서 일일 루틴을 시작했습니다', 'success');
+                    }
                     await fetchEvents();
                     await fetchStats();
                 } else {
@@ -884,6 +894,7 @@ createApp({
             offset, limit, toastVisible, toastMessage, toastType, tabs,
             showLogModal, logs, logsLoading,
             modelRefreshRunning,
+            backgroundProcessing,  // 백그라운드 처리 상태
             showModelSelector,
             modelSelectorLoading,
             modelFamilies,

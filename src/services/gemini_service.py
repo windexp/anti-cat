@@ -31,13 +31,14 @@ class GeminiService:
         """Gemini API 초기화"""
         self.api_keys = settings.gemini_api_key_list
         # 기본 모델 리스트는 env 기반. DB에서 선택된 모델이 있으면 런타임에 덮어씀.
-        self.models = settings.gemini_model_list
+        # Gemini 2.0 모델 제거 (더 이상 지원되지 않음)
+        self.models = [m for m in settings.gemini_model_list if not m.startswith('gemini-2.0')]
         self.current_key_index = 0
         self.current_model_index = 0
         self.db = db  # Database 인스턴스
         self.client = None
         self._last_request_time = 0
-        self._min_request_interval = 5.0  # 최소 요청 간격 (초)
+        self._min_request_interval = 5.0  # 최소 요청 간격 (초) - 동적으로 변경됨
 
         self._model_refresh_kv_key = "gemini_models_last_refresh_at"
         
@@ -62,7 +63,33 @@ class GeminiService:
         """현재 사용 중인 모델 이름 반환"""
         if 0 <= self.current_model_index < len(self.models):
             return self.models[self.current_model_index]
-        return self.models[0] if self.models else 'gemini-2.0-flash-lite'
+        return self.models[0] if self.models else 'gemini-2.5-flash-lite'
+    
+    def _get_model_rate_limit(self, model_name: str) -> float:
+        """모델별 최소 요청 간격 반환 (초)
+        
+        Args:
+            model_name: 모델 이름
+            
+        Returns:
+            최소 요청 간격 (초)
+            - gemini-2.5-flash-lite: 6초 (분당 10회)
+            - gemini-3-flash-preview: 12초 (분당 5회)
+            - 기타: 5초 (기본값)
+        """
+        model_lower = model_name.lower()
+        
+        # 2.5 flash-lite: 분당 10회 제한
+        if '2.5' in model_lower and 'flash-lite' in model_lower:
+            return 6.0
+        
+        # 3 flash-preview: 분당 5회 제한
+        if ('3-flash-preview' in model_lower or 
+            'gemini-3' in model_lower and 'preview' in model_lower):
+            return 12.0
+        
+        # 기본값
+        return 5.0
     
     def switch_to_next_model(self) -> bool:
         """
@@ -181,6 +208,8 @@ class GeminiService:
             selected = await self.db.get_selected_gemini_models()
             # DB에는 env-friendly 이름(접두사 제거)을 저장하는 것을 전제로 함.
             selected = [m.strip() for m in selected if m and m.strip()]
+            # Gemini 2.0 모델 제거 (더 이상 지원되지 않음)
+            selected = [m for m in selected if not m.startswith('gemini-2.0')]
             if selected:
                 self.models = selected
                 self.current_model_index = 0
@@ -193,7 +222,8 @@ class GeminiService:
 
     def set_models(self, models: List[str]) -> None:
         """런타임 모델 리스트를 교체하고 인덱스를 리셋"""
-        self.models = [m.strip() for m in models if m and m.strip()]
+        # Gemini 2.0 모델 제거 (더 이상 지원되지 않음)
+        self.models = [m.strip() for m in models if m and m.strip() and not m.startswith('gemini-2.0')]
         self.current_model_index = 0
 
     async def refresh_models_if_needed(self, refresh_interval_days: int = 30, force: bool = False) -> bool:
@@ -377,10 +407,15 @@ class GeminiService:
         return True
     
     async def _rate_limit(self):
-        """API 요청 속도 제한"""
+        """API 요청 속도 제한 (모델별 동적 조정)"""
+        current_model = self._get_current_model()
+        min_interval = self._get_model_rate_limit(current_model)
+        
         elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_request_interval:
-            await asyncio.sleep(self._min_request_interval - elapsed)
+        if elapsed < min_interval:
+            wait_time = min_interval - elapsed
+            logger.debug(f"Rate limit: {wait_time:.1f}초 대기 (모델: {current_model})")
+            await asyncio.sleep(wait_time)
         self._last_request_time = time.time()
     
     async def analyze_image(

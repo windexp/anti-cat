@@ -1,41 +1,28 @@
-version: '3.8'
+##########################
+# GLOBAL NETWORK
+##########################
+networks:
+  proxy_net:
+    external: true
 
+##########################
+# SERVICES
+##########################
 services:
+
   anti-cat:
-    build: .
-    container_name: anti-cat-server
+    build: ./
+    container_name: anti-cat
     restart: unless-stopped
-    ports:
-      - "8150:8150"
-    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8150", "--reload"]
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8150", "--reload", "--reload-dir", "/app/src"]
     volumes:
       # 전체 프로젝트를 마운트해서 --reload 반영 (src/static/data/.env 포함)
       - ./:/app
+      - ./.env:/app/.env:ro
     environment:
       - TZ=Asia/Seoul
       # 환경변수는 .env 파일에서 자동으로 로드됨
       - PYTHONUNBUFFERED=1
     networks:
-      - anti-cat-network
-    # 로그 설정
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    # 헬스체크 (Dockerfile에 정의된 것이 우선)
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8150/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      - proxy_net
 
-networks:
-  anti-cat-network:
-    driver: bridge
-
-# 볼륨 정의 (선택사항 - 로컬 디렉토리 대신 Docker 볼륨 사용 시)
-# volumes:
-#   anti-cat-data:
-#     driver: local

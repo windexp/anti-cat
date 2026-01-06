@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # Gemini API 설정 (JSON 배열 형식)
     gemini_api_keys: str  # '["key1", "key2"]' 형식
     gemini_api_key_list: List[str] = []  # 파싱된 리스트
-    gemini_models: str = '["gemini-2.0-flash-lite"]'  # 모델 리스트 (JSON 배열)
+    gemini_models: str = '["gemini-2.5-flash-lite"]'  # 모델 리스트 (JSON 배열) - 2.0은 더 이상 지원되지 않음
     gemini_model_list: List[str] = []  # 파싱된 모델 리스트
     
     @field_validator('gemini_api_key_list', mode='before')
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
                 # JSON 실패 시 콤마 구분 파싱
                 return [m.strip() for m in models_str.split(',') if m.strip()]
         
-        return ['gemini-2.0-flash-lite']  # 기본값
+        return ['gemini-2.5-flash-lite']  # 기본값 (2.0은 더 이상 지원되지 않음)
     
     # 이벤트 폴링 설정
     polling_interval_seconds: int = 300  # 5분마다 폴링
@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     event_process_delay: float = 3.0  # 이벤트 처리 간 대기 시간 (초)
     gemini_retry_interval_seconds: int = 60  # Gemini 재시도 간격 (1분)
     gemini_max_retries: int = 5  # Gemini 최대 재시도 횟수
+    
+    # Synthetic data 생성 확률 (카메라별 설정)
+    synthetic_probability_main_entrance: float = 0.05  # main entrance: 5%
+    synthetic_probability_garden: float = 1.0  # garden: 100%
+    synthetic_probability_default: float = 0.3  # 기타 카메라: 30%
     
     # 데이터 저장 경로
     data_dir: Path = Path("./data")
@@ -107,7 +112,7 @@ class Settings(BaseSettings):
                 self.gemini_model_list = [m.strip() for m in self.gemini_models.split(',') if m.strip()]
         
         if not self.gemini_model_list:
-            self.gemini_model_list = ['gemini-2.0-flash-lite']  # 기본값
+            self.gemini_model_list = ['gemini-2.5-flash-lite']  # 기본값 (2.0은 더 이상 지원되지 않음)
         
         # 디렉토리 생성
         self.data_dir.mkdir(exist_ok=True)

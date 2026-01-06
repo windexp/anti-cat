@@ -26,6 +26,8 @@ class EventProcessor:
         
         self._polling_task: Optional[asyncio.Task] = None
         self._is_running = False
+        self._background_task: Optional[asyncio.Task] = None  # 수동 트리거된 백그라운드 태스크
+        self._background_running = False  # 백그라운드 처리 실행 중 플래그
     
     async def start(self):
         """폴링 서비스 시작"""
@@ -107,6 +109,35 @@ class EventProcessor:
                 logger.error(f"스케줄 루프 오류: {e}")
                 # 오류 발생 시 1시간 후 재시도
                 await asyncio.sleep(3600)
+    
+    def trigger_background_processing(self) -> Dict[str, Any]:
+        """백그라운드에서 이벤트 처리를 시작 (논블로킹)
+        
+        Returns:
+            처리 시작 상태 정보
+        """
+        if self._background_running:
+            return {
+                "status": "already_running",
+                "message": "이미 백그라운드 처리가 실행 중입니다"
+            }
+        
+        # 백그라운드 태스크 시작
+        self._background_task = asyncio.create_task(self._background_fetch_and_process())
+        return {
+            "status": "started",
+            "message": "백그라운드에서 이벤트 처리를 시작했습니다"
+        }
+    
+    async def _background_fetch_and_process(self):
+        """백그라운드에서 실행되는 이벤트 처리 래퍼"""
+        try:
+            self._background_running = True
+            await self._fetch_and_process_events()
+        except Exception as e:
+            logger.error(f"백그라운드 이벤트 처리 중 오류: {e}", exc_info=True)
+        finally:
+            self._background_running = False
     
     async def _fetch_and_process_events(self):
         """
@@ -441,6 +472,7 @@ class EventProcessor:
         
         return {
             "is_running": self._is_running,
+            "background_processing": self._background_running,
             "stats": stats,
             "pending_gemini": pending,
             "mismatched": mismatched,

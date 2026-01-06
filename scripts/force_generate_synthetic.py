@@ -42,22 +42,33 @@ async def main():
     manager = DatasetManager()
     await manager.initialize()
     
-    # Force probability to 100%
-    manager.synthetic_probability = 1.0
+    # Note: 이제 synthetic 확률은 카메라별로 settings에서 관리됩니다
+    # settings.synthetic_probability_main_entrance = 0.05  (5%)
+    # settings.synthetic_probability_garden = 1.0  (100%)
+    # 테스트를 위해 모든 카메라에 대해 100% 생성하려면 settings를 임시로 수정:
+    original_main = settings.synthetic_probability_main_entrance
+    original_garden = settings.synthetic_probability_garden
+    original_default = settings.synthetic_probability_default
     
-    # Get classified events
-    events = await manager.get_classified_events()
-    print(f"Found {len(events)} classified events.")
+    # Force all to 100%
+    settings.synthetic_probability_main_entrance = 1.0
+    settings.synthetic_probability_garden = 1.0
+    settings.synthetic_probability_default = 1.0
     
-    # Filter events: snapshot_downloaded == 1 AND created_at within last 24 hours
-    now = datetime.now()
-    one_day_ago = now - timedelta(days=1)
-    
-    filtered_events = []
-    for event in events:
-        # Check snapshot
-        if event.get('snapshot_downloaded') != 1:
-            continue
+    try:
+        # Get classified events
+        events = await manager.get_classified_events()
+        print(f"Found {len(events)} classified events.")
+        
+        # Filter events: snapshot_downloaded == 1 AND created_at within last 24 hours
+        now = datetime.now()
+        one_day_ago = now - timedelta(days=1)
+        
+        filtered_events = []
+        for event in events:
+            # Check snapshot
+            if event.get('snapshot_downloaded') != 1:
+                continue
             
         # Check time
         created_at_str = event.get('created_at')
@@ -229,7 +240,13 @@ async def main():
                 print(f"  -> Image validation error: {e}")
                 continue
         
-    print(f"Done. Found {count} valid synthetic source images.")
+        print(f"Done. Found {count} valid synthetic source images.")
+    
+    finally:
+        # Restore original probabilities
+        settings.synthetic_probability_main_entrance = original_main
+        settings.synthetic_probability_garden = original_garden
+        settings.synthetic_probability_default = original_default
 
 if __name__ == "__main__":
     asyncio.run(main())
